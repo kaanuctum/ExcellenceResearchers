@@ -115,7 +115,7 @@ class Analyzer:
 
         results_df.to_csv(self.paths['df_distance_csv'], sep='\t')
         results_df.to_pickle(self.paths['df_distance'])
-        return results
+        return results_df
 
     def calc_position_of_documents(self):
         print('Calculating results')
