@@ -1,0 +1,5 @@
+1) mark all the entries with before/after based on the authurs in to the lookup table.
+
+2)
+
+3)
