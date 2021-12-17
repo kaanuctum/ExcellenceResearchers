@@ -1,7 +1,7 @@
 from multiprocessing import freeze_support
 
 from MainScripts.AnalyzeData import Analyzer
-from MainScripts.TrainModels2 import ModelTrainer
+from MainScripts.TrainModels import ModelTrainer
 
 if __name__ == '__main__':
     freeze_support()
