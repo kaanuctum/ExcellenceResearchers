@@ -8,13 +8,13 @@ import pickle
 from tqdm import tqdm
 
 import gensim
-from multiprocessing import Manager, freeze_support, Pool
+from multiprocessing import Manager, Pool
 
 class ModelTrainer:
-    def __init__(self, force_re_parse):
+    def __init__(self, force_re_parse, worker_count=1):
         self.min_topics = 20
         self.max_topics = 50
-        self.worker_count = 8
+        self.worker_count = worker_count
 
         self.mn = Manager()
         self.ns = self.mn.Namespace()
