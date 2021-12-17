@@ -8,7 +8,9 @@ import pickle
 from tqdm import tqdm
 
 import gensim
-from multiprocessing import Manager, Pool
+from multiprocessing import Manager, Pool, Process
+import concurrent.futures
+
 
 class ModelTrainer:
     def __init__(self, force_re_parse, worker_count=1):
@@ -51,11 +53,11 @@ class ModelTrainer:
         pickle.dump(self.model_results, open(self.paths['model_results'], 'wb'))
         pickle.dump(self.prev_done, open(self.paths['prev_done'], 'wb'))
 
-    def calc_coherence_of_model(self, lda_model):
+    def calc_coherence_of_model(self, lda_model, coherence_type='c_v'):
         coherence_model_lda = gensim.models.CoherenceModel(model=lda_model,
                                                            texts=self.ns.DATA_LEMMATIZED,
                                                            dictionary=self.ns.ID2WORD,
-                                                           coherence='c_v')
+                                                           coherence=coherence_type)
         return coherence_model_lda.get_coherence()
 
     def train_model(self, num_topics, a, b):
@@ -88,12 +90,17 @@ class ModelTrainer:
 
         return lda_model
 
-    def create_models_in_parallel(self, training_range):
-        executor = Pool(len(training_range))
-        results = executor.map(train_model_auto, training_range)
-        executor.close()
-        executor.join()
+    def train_model_auto(self, num_topics):
+        return self.train_model(num_topics=num_topics, a='auto', b='auto')
 
+    def create_models_in_parallel(self, training_range):
+        # pool = Pool(len(training_range))
+        # results = pool.map(self.train_model_auto, training_range)
+        # pool.close()
+        # pool.join()
+
+        pool = concurrent.futures.ProcessPoolExecutor()
+        results = pool.map(self.train_model_auto, training_range)
         return results
 
     def save_model(self, ldamodel):
