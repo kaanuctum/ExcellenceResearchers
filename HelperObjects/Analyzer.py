@@ -6,13 +6,15 @@ import gensim
 
 
 class Analyzer:
-    def __init__(self):
+    def __init__(self, model):
         self.sql = sql
         self.sql.connect()
         self.paths = pathManager.get_paths()
         self.df = pd.read_pickle(self.paths['df_parsed_articles'])
         self.dict = self.df.set_index('id').to_dict('index')
-        self.model = gensim.models.LdaModel.load(self.paths['model'])
+        self.model = gensim.models.LdaModel.load(f'DATA/MODELS/MODEL/{model}/best_model.model')
+
+
 
     def get_article_topics_before_after(self, auth_id, cluster_id):
         self.sql.cur.execute('SELECT DISTINCT(grant_year) from excellence_clusters WHERE cluster_id=?', (cluster_id,))
@@ -51,7 +53,7 @@ class Analyzer:
             temp = 0.0
             for j in range(n):
                 temp += self.dist(inputs[i], inputs[j])
-            dists.append((temp / (n - 1)))
+            dists.append((temp / (n - 1))) # n-1 for when i=j
         return dists
 
     def get_grants(self, first=True):
@@ -66,6 +68,33 @@ class Analyzer:
         #       this method gives 2 entries for that author, one as before/after 2000, second as before/after 2010
         self.sql.cur.execute("SELECT scopus_id, cluster_id FROM researchers")
         return self.sql.cur.fetchall()
+
+    def calc_position_of_documents(self):
+        print('Calculating results')
+        self.df['topics'] = self.df['bow'].map(lambda x: self.model.get_document_topics(x, minimum_probability=0))
+        self.dict = self.df.set_index('id').to_dict('index')
+        self.df.to_pickle(self.paths['df_parsed_articles'])
+
+    def write_distances_to_db(self):
+        results_df = self.get_prepared_data()
+        for row in results_df.iterrows():
+            self.sql.cur.execute(
+                "update researchers SET avg_dist_before=?, avg_dist_after=? WHERE scopus_id=? AND cluster_id=?",
+                (row['avg_dist_before'], row['avg_dist_after'], row['auth_id'], row['cluster_id']))
+            self.sql.conn.commit()
+
+    def write_position_of_documents(self):
+        print('writing results into db')
+        try:
+            for i, row in tqdm(self.df.iterrows()):
+                sql.cur.execute("UPDATE articles SET topic=? WHERE eid=?", (row['topics'], row['id']))
+                sql.conn.commit()
+        except:
+            self.calc_position_of_documents()
+            for i, row in tqdm(self.df.iterrows()):
+                sql.cur.execute("UPDATE articles SET topic=? WHERE eid=?", (row['topics'], row['id']))
+                sql.conn.commit()
+
 
     def calc_before_after_average_dist(self):
         self.sql.cur.execute("update researchers SET avg_dist_before=0, avg_dist_after=0")
@@ -117,37 +146,8 @@ class Analyzer:
         results_df.to_pickle(self.paths['df_distance'])
         return results_df
 
-    def calc_position_of_documents(self):
-        print('Calculating results')
-        self.df['topics'] = self.df['bow'].map(lambda x: self.model.get_document_topics(x, minimum_probability=0))
-        self.dict = self.df.set_index('id').to_dict('index')
-        self.df.to_pickle(self.paths['df_parsed_articles'])
-
-    def write_distances_to_db(self):
-        results_df = self.get_prepared_data()
-        for row in results_df.iterrows():
-            self.sql.cur.execute(
-                "update researchers SET avg_dist_before=?, avg_dist_after=? WHERE scopus_id=? AND cluster_id=?",
-                (row['avg_dist_before'], row['avg_dist_after'], row['auth_id'], row['cluster_id']))
-            self.sql.conn.commit()
-
-    def write_position_of_documents(self):
-        print('writing results into db')
-        try:
-            for i, row in tqdm(self.df.iterrows()):
-                sql.cur.execute("UPDATE articles SET topic=? WHERE eid=?", (row['topics'], row['id']))
-                sql.conn.commit()
-        except:
-            self.calc_position_of_documents()
-            for i, row in tqdm(self.df.iterrows()):
-                sql.cur.execute("UPDATE articles SET topic=? WHERE eid=?", (row['topics'], row['id']))
-                sql.conn.commit()
-
     def get_prepared_data(self):
-        try:
-            data = pd.read_pickle(self.paths['df_distance'])
-        except:
-            data = self.calc_before_after_average_dist()
+        data = self.calc_before_after_average_dist()
         data.set_index(data["Author_id"], inplace=True)
         data.drop(columns=["Author_id"], inplace=True)
         return data
