@@ -2,8 +2,7 @@ class PathManager:
     def __init__(self):
         self.__paths = {
             'lda_tuning_results': 'DATA/MODELS/lda_tuning_results.csv',
-            'model': f'DATA/MODELS/MODEL/best_model.model',
-            'model_vis': f'DATA/MODELS/MODEL/best_model.html',
+
             'model_results': 'DATA/MODELS/TRAINING/model_results.pickle',
             'prev_done': 'DATA/MODELS/TRAINING/prev_done.pickle',
             'hyperparams': 'DATA/MODELS/TRAINING/hyperparameters.json',

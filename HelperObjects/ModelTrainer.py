@@ -1,48 +1,43 @@
 import pyLDAvis
 import pyLDAvis.gensim_models
-
-from HelperObjects.Parsers.Parse_Abstracts2 import parse_words
+import warnings
+warnings.filterwarnings('ignore')
+from MainScripts.ParseData import parse_words
 from HelperObjects import *
 import pandas as pd
 import pickle
 from tqdm import tqdm
 
 import gensim
-from multiprocessing import Manager, Pool, Process
 import concurrent.futures
 
 
 class ModelTrainer:
     def __init__(self, force_re_parse, worker_count=1):
-        self.min_topics = 20
+        self.min_topics = 4
         self.max_topics = 50
         self.worker_count = worker_count
-
-        self.mn = Manager()
-        self.ns = self.mn.Namespace()
-
         self.model_name = 'best_model'
         self.paths = pathManager.get_paths()
 
         if force_re_parse:
-            self.ns.ID2WORD, self.ns.DATA_LEMMATIZED, self.ns.CORPUS, _ = parse_words()
+            self.ID2WORD, self.DATA_LEMMATIZED, self.CORPUS, _ = parse_words()
         else:
             try:
-                self.ns.ID2WORD = pickle.load(open(self.paths['id2word'], 'rb'))
-                self.ns.DATA_LEMMATIZED = pickle.load(open(self.paths['data_lemmatized'], 'rb'))
-                self.ns.CORPUS = pickle.load(open(self.paths['corpus'], 'rb'))
+                self.ID2WORD = pickle.load(open(self.paths['id2word'], 'rb'))
+                self.DATA_LEMMATIZED = pickle.load(open(self.paths['data_lemmatized'], 'rb'))
+                self.CORPUS = pickle.load(open(self.paths['corpus'], 'rb'))
 
             except FileNotFoundError:
                 print("couldn't load preliminary results, re-parsing raw abstracts")
-                self.ns.ID2WORD, self.ns.DATA_LEMMATIZED, self.ns.CORPUS, _ = parse_words()
+                self.ID2WORD, self.DATA_LEMMATIZED, self.CORPUS, _ = parse_words()
 
         try:
             self.model_results = pickle.load(open(self.paths['model_results'], 'rb'))
         except FileNotFoundError:
             self.model_results = {'Topics': [],
-                                  'Alpha': [],
-                                  'Beta': [],
-                                  'Coherence': []
+                                  'Coherence_cv': [],
+                                  'Coherence_umass': []
                                   }
         try:
             self.prev_done = pickle.load(open(self.paths['prev_done'], 'rb'))
@@ -53,109 +48,84 @@ class ModelTrainer:
         pickle.dump(self.model_results, open(self.paths['model_results'], 'wb'))
         pickle.dump(self.prev_done, open(self.paths['prev_done'], 'wb'))
 
-    def calc_coherence_of_model(self, lda_model, coherence_type='c_v'):
-        coherence_model_lda = gensim.models.CoherenceModel(model=lda_model,
-                                                           texts=self.ns.DATA_LEMMATIZED,
-                                                           dictionary=self.ns.ID2WORD,
-                                                           coherence=coherence_type)
-        return coherence_model_lda.get_coherence()
-
-    def train_model(self, num_topics, a, b):
+    def train_model_auto(self, num_topics):
         chunk_size = (2 ** 14)
-        passes = 20
         iterations = 400
-
-        if a == 'auto' or b == 'auto':
-            lda_model = gensim.models.LdaModel(corpus=self.ns.CORPUS,
-                                               id2word=self.ns.ID2WORD,
-                                               chunksize=chunk_size,
-                                               alpha=a,
-                                               eta=b,
-                                               iterations=iterations,
-                                               num_topics=num_topics,
-                                               passes=passes,
-                                               eval_every=None
-                                               )
-        else:
-            lda_model = gensim.models.LdaMulticore(corpus=self.ns.CORPUS,
-                                                   id2word=self.ns.ID2WORD,
-                                                   chunksize=chunk_size,
-                                                   alpha=a,
-                                                   eta=b,
-                                                   iterations=iterations,
-                                                   num_topics=num_topics,
-                                                   passes=passes,
-                                                   eval_every=None
-                                                   )
-
+        passes = 50
+        lda_model = gensim.models.LdaModel(num_topics=num_topics,
+                                           corpus=self.CORPUS,
+                                           id2word=self.ID2WORD,
+                                           chunksize=chunk_size,
+                                           iterations=iterations,
+                                           passes=passes,
+                                           eval_every=None
+                                           )
         return lda_model
 
-    def train_model_auto(self, num_topics):
-        return self.train_model(num_topics=num_topics, a='auto', b='auto')
-
     def create_models_in_parallel(self, training_range):
-        # pool = Pool(len(training_range))
-        # results = pool.map(self.train_model_auto, training_range)
-        # pool.close()
-        # pool.join()
-
         pool = concurrent.futures.ProcessPoolExecutor()
         results = pool.map(self.train_model_auto, training_range)
         return results
 
-    def save_model(self, ldamodel):
-        ldamodel.save(self.paths['model'])
-        self.create_visualisation(ldamodel)
-
-    def create_visualisation(self, model):
-        vis = pyLDAvis.gensim_models.prepare(model, self.ns.CORPUS, self.ns.ID2WORD, mds="mmds", R=30)
-        pyLDAvis.save_html(vis, self.paths['model_vis'])
-        print(f'saved visualization for model: {self.model_name}')
+    def save_model(self, lda_model, coherence):
+        model = f'DATA/MODELS/MODEL/{coherence.upper()}/best_model.model'
+        model_vis = f'DATA/MODELS/MODEL/{coherence.upper()}/best_model.html'
+        lda_model.save(model)
+        vis = pyLDAvis.gensim_models.prepare(lda_model, self.CORPUS, self.ID2WORD, mds="mmds", R=30)
+        pyLDAvis.save_html(vis, model_vis)
 
     def find_optimal_values(self):
 
         topics_range = range(self.min_topics, self.max_topics + 1, self.worker_count)
 
-        alpha_range = ['auto']
-        beta_range = ['auto']
+        best_cv = 0
+        best_umas = 0
 
         progress_bar = tqdm(total=self.max_topics - self.min_topics + 1)
 
-        for alpha in alpha_range:
-            for beta in beta_range:
-                for topic_number in topics_range:
-                    cur_it = (topic_number, alpha, beta)
-                    k_max = min(topic_number + self.worker_count, self.max_topics + 1)
-                    progress_bar.display(str(topic_number) + ' - ' + str(k_max))
-                    # get the coherence score for the given parameters
-                    if cur_it in self.prev_done:
-                        progress_bar.update(1)
-                        continue
+        for topic_number in topics_range:
+            k_max = min(topic_number + self.worker_count, self.max_topics + 1)
+            progress_bar.display(str(topic_number) + ' - ' + str(k_max-1))
 
-                    train_range = [(i, self.ns) for i in
-                                   range(topic_number, k_max)]
+            train_range = [i for i in range(topic_number, k_max)]
+            prev_done = True
+            for i in train_range:
+                if i not in self.model_results['Topics']:
+                    prev_done = False
+                else:
+                    print(f"{i} topics previously done")
+            if prev_done: continue
 
-                    results = self.create_models_in_parallel(training_range=train_range)
-                    for lda_model in results:
-                        cv = gensim.models.CoherenceModel(model=lda_model, texts=self.ns.DATA_LEMMATIZED,
-                                                          dictionary=self.ns.ID2WORD,
-                                                          coherence='c_v').get_coherence()
+            results = self.create_models_in_parallel(training_range=train_range)
+            for lda_model in results:
+                cv = gensim.models.CoherenceModel(model=lda_model, texts=self.DATA_LEMMATIZED,
+                                                  dictionary=self.ID2WORD,
+                                                  coherence="c_v").get_coherence()
 
-                        k = lda_model.num_topics
+                umass = gensim.models.CoherenceModel(model=lda_model, texts=self.DATA_LEMMATIZED,
+                                                     dictionary=self.ID2WORD,
+                                                     coherence="u_mass").get_coherence()
 
-                        # Save the model results
-                        self.model_results['Topics'].append(k)
-                        self.model_results['Alpha'].append(alpha)
-                        self.model_results['Beta'].append(alpha)
-                        self.model_results['Coherence'].append(cv)
-                        self.prev_done.append(cur_it)
-                        print(lda_model.num_topics, alpha, beta, cv)
+                k = lda_model.num_topics
 
-                        if hpController.update(k=k, a=alpha, b=beta, score=cv):
-                            self.save_model(ldamodel=lda_model)
+                # Save the model results
+                self.model_results['Topics'].append(k)
+                self.model_results['Coherence_cv'].append(cv)
+                self.model_results['Coherence_umass'].append(umass)
+                self.prev_done.append(topic_number)
+                print(lda_model.num_topics, cv, umass)
 
-                        progress_bar.update(1)
-                    pd.DataFrame(self.model_results).to_csv(self.paths['lda_tuning_results'], index=False, sep='\t')
-                    pickle.dump(self.model_results, open(self.paths['model_results'], 'wb'))
-                    pickle.dump(self.prev_done, open(self.paths['prev_done'], 'wb'))
+                if cv > best_cv:
+                    self.save_model(lda_model, 'cv')
+                    print(f"new best coherence for cv")
+                    best_cv = cv
+                if umass < best_umas:
+                    self.save_model(lda_model, 'umass')
+                    print(f"new best coherence for umass")
+                    best_umas = umass
+
+                progress_bar.update(1)
+            pd.DataFrame(self.model_results).to_csv(self.paths['lda_tuning_results'], index=False, sep='\t')
+            pickle.dump(self.model_results, open(self.paths['model_results'], 'wb'))
+            pickle.dump(self.prev_done, open(self.paths['prev_done'], 'wb'))
         progress_bar.close()

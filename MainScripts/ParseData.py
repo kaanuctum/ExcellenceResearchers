@@ -1,5 +1,8 @@
 from HelperObjects.Parsers.Parse_Abstracts2 import *
-
+import pickle
+import time
+import spacy
+import pandas as pd
 
 def parse_words():
     grand_beginning = time.time()
@@ -37,17 +40,19 @@ def parse_words():
     # Form Bigrams
     data_words_bigrams = make_bigrams(data_words_no_stops, bigram_mod=bigram_mod)
     data_lemmatized = lemmatization(data_words_bigrams, nlp=nlp, allowed_postags=['NOUN', 'ADJ', 'VERB', 'ADV'])
-    df['lemmatized'] = words_to_sent(data_lemmatized)
     print(f"words lemmatized in {time.time() - start} seconds")
 
     start = time.time()
     id2word = gensim.corpora.Dictionary(data_lemmatized)  # Create Dictionary
-    # Filter out words that occur less than 20 documents, or more than 50% of the documents.
-    # id2word.filter_extremes(no_below=20, no_above=0.5)
+    # Filter out words that occur less than 20 documents, or more than in 50% of the documents.
+    l1 = len(id2word)
+    id2word.filter_extremes(no_below=20, no_above=0.5)
+    print(f"{l1 - len(id2word)} Extreme words filtered")
     corpus = [id2word.doc2bow(text) for text in data_lemmatized]  # View
     df['bow'] = corpus
+    df['lemmatized'] = bow_to_sentence(corpus, id2word)
     print(f"Corpus created in {time.time() - start} seconds")
-
+    print(df)
     print('Number of unique tokens: %d' % len(id2word))
     print('Number of documents: %d' % len(corpus))
 
@@ -72,4 +77,4 @@ def parse_words():
 
 
 if __name__ == '__main__':
-    parse_words()
+    id2word, data_lemmatized, corpus, df = parse_words()

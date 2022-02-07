@@ -7,15 +7,16 @@ import gensim
 
 class Analyzer:
     def __init__(self, model):
+        self.name = model.upper()
         self.sql = sql
         self.sql.connect()
         self.paths = pathManager.get_paths()
         self.df = pd.read_pickle(self.paths['df_parsed_articles'])
         self.dict = self.df.set_index('id').to_dict('index')
-        self.model = gensim.models.LdaModel.load(f'DATA/MODELS/MODEL/{model}/best_model.model')
+        self.model = gensim.models.LdaModel.load(f'DATA/MODELS/MODEL/{self.name}/best_model.model')
 
-
-
+    # get the topic distribution of articles of a author, and divide the articles into before/after groups based on the
+    # cluster group given into it
     def get_article_topics_before_after(self, auth_id, cluster_id):
         self.sql.cur.execute('SELECT DISTINCT(grant_year) from excellence_clusters WHERE cluster_id=?', (cluster_id,))
         year = self.sql.cur.fetchall()[0][0]
@@ -53,11 +54,12 @@ class Analyzer:
             temp = 0.0
             for j in range(n):
                 temp += self.dist(inputs[i], inputs[j])
-            dists.append((temp / (n - 1))) # n-1 for when i=j
+            dists.append((temp / (n - 1)))  # n-1 for when i=j
         return dists
 
+    # get the cluster id and author pairs for all authors
     def get_grants(self, first=True):
-        # divides the authors works into 2 based on the first grant they ever recieved
+        # divides the authors works into 2 based on the first grant they ever received, disregards the others
         if first:
             self.sql.cur.execute(
                 'SELECT scopus_id, MIN(cluster_id) FROM researchers GROUP BY scopus_id HAVING scopus_id NOT NULL')
@@ -66,38 +68,16 @@ class Analyzer:
         # divides the authors works into multiple groups of before and after, for every grant they ever recieved
         # e.g.: an author recieves two grants, one in 2000, a second one in 2010
         #       this method gives 2 entries for that author, one as before/after 2000, second as before/after 2010
-        self.sql.cur.execute("SELECT scopus_id, cluster_id FROM researchers")
+        self.sql.cur.execute("SELECT scopus_id, cluster_id FROM researchers WHERE scopus_id NOT NULL")
         return self.sql.cur.fetchall()
 
+    # add the topic distribution of all the documents
     def calc_position_of_documents(self):
         print('Calculating results')
         self.df['topics'] = self.df['bow'].map(lambda x: self.model.get_document_topics(x, minimum_probability=0))
         self.dict = self.df.set_index('id').to_dict('index')
-        self.df.to_pickle(self.paths['df_parsed_articles'])
-
-    def write_distances_to_db(self):
-        results_df = self.get_prepared_data()
-        for row in results_df.iterrows():
-            self.sql.cur.execute(
-                "update researchers SET avg_dist_before=?, avg_dist_after=? WHERE scopus_id=? AND cluster_id=?",
-                (row['avg_dist_before'], row['avg_dist_after'], row['auth_id'], row['cluster_id']))
-            self.sql.conn.commit()
-
-    def write_position_of_documents(self):
-        print('writing results into db')
-        try:
-            for i, row in tqdm(self.df.iterrows()):
-                sql.cur.execute("UPDATE articles SET topic=? WHERE eid=?", (row['topics'], row['id']))
-                sql.conn.commit()
-        except:
-            self.calc_position_of_documents()
-            for i, row in tqdm(self.df.iterrows()):
-                sql.cur.execute("UPDATE articles SET topic=? WHERE eid=?", (row['topics'], row['id']))
-                sql.conn.commit()
-
 
     def calc_before_after_average_dist(self):
-        self.sql.cur.execute("update researchers SET avg_dist_before=0, avg_dist_after=0")
         self.sql.conn.commit()
 
         results = {
@@ -146,8 +126,14 @@ class Analyzer:
         results_df.to_pickle(self.paths['df_distance'])
         return results_df
 
-    def get_prepared_data(self):
-        data = self.calc_before_after_average_dist()
-        data.set_index(data["Author_id"], inplace=True)
-        data.drop(columns=["Author_id"], inplace=True)
-        return data
+    def main(self):
+        path = f"DATA/ANALYSIS/{self.name}_results.pickle"
+        try:
+            return pd.read_pickle(path)
+        except:
+            self.calc_position_of_documents()
+            data = self.calc_before_after_average_dist()
+            data.set_index(data["Author_id"], inplace=True)
+            data.drop(columns=["Author_id"], inplace=True)
+            pd.to_pickle(data, path)
+            return data

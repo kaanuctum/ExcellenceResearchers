@@ -1,5 +1,4 @@
 from HelperObjects.SQLConnector import SQLConnector
-from HelperObjects.HyperParameterController import HyperParameterController
 from HelperObjects.PathManager import PathManager
 import HelperObjects.SensitiveData
 import json
@@ -11,8 +10,3 @@ dataFhand = json.load(open("HelperObjects/SensitiveData/data.json"))
 sql = SQLConnector(lite_name=dataFhand["sqlite_name"])
 
 pathManager = PathManager()
-hpController = HyperParameterController()
-try:
-    hpController.read()
-except FileNotFoundError:
-    hpController.write()
