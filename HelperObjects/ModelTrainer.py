@@ -13,7 +13,8 @@ import concurrent.futures
 
 
 class ModelTrainer:
-    def __init__(self, force_re_parse, worker_count=1):
+    def __init__(self, force_re_parse=False, worker_count=1):
+
         self.min_topics = 4
         self.max_topics = 50
         self.worker_count = worker_count
@@ -74,6 +75,17 @@ class ModelTrainer:
         vis = pyLDAvis.gensim_models.prepare(lda_model, self.CORPUS, self.ID2WORD, mds="mmds", R=30)
         pyLDAvis.save_html(vis, model_vis)
 
+    def get_coherence_values(self, lda_model):
+        cv = gensim.models.CoherenceModel(model=lda_model, texts=self.DATA_LEMMATIZED,
+                                          dictionary=self.ID2WORD,
+                                          coherence="c_v").get_coherence()
+
+        umass = gensim.models.CoherenceModel(model=lda_model, texts=self.DATA_LEMMATIZED,
+                                             dictionary=self.ID2WORD,
+                                             coherence="u_mass").get_coherence()
+
+        return cv, umass
+
     def find_optimal_values(self):
 
         topics_range = range(self.min_topics, self.max_topics + 1, self.worker_count)
@@ -98,13 +110,8 @@ class ModelTrainer:
 
             results = self.create_models_in_parallel(training_range=train_range)
             for lda_model in results:
-                cv = gensim.models.CoherenceModel(model=lda_model, texts=self.DATA_LEMMATIZED,
-                                                  dictionary=self.ID2WORD,
-                                                  coherence="c_v").get_coherence()
 
-                umass = gensim.models.CoherenceModel(model=lda_model, texts=self.DATA_LEMMATIZED,
-                                                     dictionary=self.ID2WORD,
-                                                     coherence="u_mass").get_coherence()
+                cv, umass = self.get_coherence_values(lda_model)
 
                 k = lda_model.num_topics
 
@@ -129,3 +136,6 @@ class ModelTrainer:
             pickle.dump(self.model_results, open(self.paths['model_results'], 'wb'))
             pickle.dump(self.prev_done, open(self.paths['prev_done'], 'wb'))
         progress_bar.close()
+        df = pd.DataFrame(self.model_results)
+        print("Best Umass model:\n ", df.iloc[df['Coherence_umass'].idxmin()])
+        print("Best CV model   :\n ", df.iloc[df['Coherence_cv'].idxmax()])
