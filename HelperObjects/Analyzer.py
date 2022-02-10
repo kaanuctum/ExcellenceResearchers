@@ -77,7 +77,7 @@ class Analyzer:
         self.df['topics'] = self.df['bow'].map(lambda x: self.model.get_document_topics(x, minimum_probability=0))
         self.dict = self.df.set_index('id').to_dict('index')
 
-    def calc_before_after_average_dist(self):
+    def calc_before_after_grant_average_dist(self):
         self.sql.conn.commit()
 
         results = {
@@ -126,13 +126,46 @@ class Analyzer:
         results_df.to_pickle(self.paths['df_distance'])
         return results_df
 
+    def calc_average_for_every_year(self):
+        path = f"DATA/ANALYSIS/{self.name}_yearly_average_distances.pickle"
+        try:
+            return pd.read_pickle(path)
+        except:
+            self.calc_position_of_documents()
+            auths = self.get_grants()
+            auth_collector = {
+            }
+            for auth_id, _ in tqdm(auths):
+                auth_collector[auth_id] = dict()
+                self.sql.cur.execute('''SELECT DISTINCT a.year FROM articles a INNER JOIN lookup_article_researcher l 
+                                                        ON a.eid = l.article_id
+                                                        AND l.researcher_id=?
+                                                        AND a.abstract_flag=1''', (auth_id, ))
+                years = self.sql.cur.fetchall()
+                for year_count, year in enumerate(years):
+                    self.sql.cur.execute('''SELECT DISTINCT a.eid FROM articles a INNER JOIN lookup_article_researcher l 
+                                                ON a.eid = l.article_id
+                                                AND l.researcher_id=?
+                                                AND a.year = ?
+                                                AND a.abstract_flag=1''', (auth_id, int(year[0])))
+                    temp = self.sql.cur.fetchall()
+                    year_document_topics = [([i[1] for i in self.dict[eid[0]]['topics']]) for eid in temp]
+                    avg_dist = self.map_to_average_distance(year_document_topics)
+
+                    auth_collector[auth_id][year_count] = np.average(avg_dist)
+            df = pd.DataFrame(auth_collector)
+            df['average'] = df.mean(axis=1)
+            df.sort_index(axis=0, inplace=True)
+            df.to_pickle(path)
+            return df
+
     def main(self):
         path = f"DATA/ANALYSIS/{self.name}_results.pickle"
         try:
             return pd.read_pickle(path)
         except:
             self.calc_position_of_documents()
-            data = self.calc_before_after_average_dist()
+            data = self.calc_before_after_grant_average_dist()
             data.set_index(data["Author_id"], inplace=True)
             data.drop(columns=["Author_id"], inplace=True)
             pd.to_pickle(data, path)

@@ -9,4 +9,4 @@ if __name__ == '__main__':
     # mt.find_optimal_values()
     analyzer = Analyzer()
     # analyzer.calc_position_of_documents()
-    analyzer.calc_before_after_average_dist()
+    analyzer.calc_before_after_grant_average_dist()

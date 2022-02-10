@@ -1,11 +1,12 @@
+import numpy as np
+
 from HelperObjects.Analyzer import Analyzer, pathManager
 
 import pingouin as pt
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import pickle
-
-pd.set_option('display.max_columns', None)
 
 def analyze_before_after(model):
     alpha = 0.05
@@ -26,13 +27,63 @@ def analyze_before_after(model):
     ax1.title.set_text('Average Distance Before')
     ax2.hist(filtered['avg_dist_after'], color='blue', edgecolor='black', bins=bin_size)
     ax2.title.set_text('Average Distance After')
-    plt.show()
-
-    res = pt.ttest(filtered["avg_dist_before"], filtered["avg_dist_after"], paired=True)
+    ax1.set_xlabel('Average Distance')
+    ax1.set_ylabel('Number of Researchers')
+    ax2.set_xlabel('Average Distance')
+    ax2.set_ylabel('Number of Researchers')
+    plt.tight_layout()
+    res = pt.ttest(filtered["avg_dist_after"], filtered["avg_dist_before"], paired=True)
+    res['Type'] = model
     print(res)
     print(res["p-val"] < alpha)
     plt.savefig(f'AnalyzeData/{model}_Distance.png')
     res.to_csv(f'AnalyzeData/{model}_t_test.csv')
+
+    # look at the two effects seperatly
+    filtered_bigger = filtered.loc[(filtered["avg_dist_after"] > filtered["avg_dist_before"])]
+    filtered_smaller = filtered.loc[(filtered["avg_dist_after"] < filtered["avg_dist_before"])]
+
+    res_bigger = pt.ttest(filtered_bigger["avg_dist_after"], filtered_bigger["avg_dist_before"], paired=True)
+    res_smaller = pt.ttest(filtered_smaller["avg_dist_after"], filtered_smaller["avg_dist_before"], paired=True)
+
+    res_smaller['Method'] = 'Smaller'
+    res_bigger['Method'] = 'Bigger'
+
+    res_separate = pd.concat([res_smaller, res_bigger])
+    res_separate.to_csv(f'AnalyzeData/{model}t_test_separate.csv')
+
+    ax1.cla();
+    ax2.cla()
+    bin_size = int(len(filtered_bigger) ** (1 / 2))
+    ax1.hist(filtered_bigger['avg_dist_before'], color='blue', edgecolor='black', bins=bin_size)
+    ax1.title.set_text('Average Distance Before')
+
+
+    ax2.hist(filtered_bigger['avg_dist_after'], color='blue', edgecolor='black', bins=bin_size)
+    ax2.title.set_text('Average Distance After')
+    ax1.set_xlabel('Average Distance')
+    ax1.set_ylabel('Number of Researchers')
+    ax2.set_xlabel('Average Distance')
+    ax2.set_ylabel('Number of Researchers')
+    plt.tight_layout()
+
+    plt.savefig(f'AnalyzeData/{model}_Distance_bigger.png')
+
+    ax1.cla()
+    ax2.cla()
+    bin_size = int(len(filtered_smaller) ** (1 / 2))
+    ax1.hist(filtered_smaller['avg_dist_before'], color='blue', edgecolor='black', bins=bin_size)
+    ax1.title.set_text('Average Distance Before')
+    ax2.hist(filtered_smaller['avg_dist_after'], color='blue', edgecolor='black', bins=bin_size)
+    ax2.title.set_text('Average Distance After')
+    ax1.set_xlabel('Average Distance')
+    ax1.set_ylabel('Number of Researchers')
+    ax2.set_xlabel('Average Distance')
+    ax2.set_ylabel('Number of Researchers')
+    plt.tight_layout()
+    plt.savefig(f'AnalyzeData/{model}_Distance_smaller.png')
+
+    return res
 
 
 def compare_models():
@@ -41,10 +92,67 @@ def compare_models():
     ax = plt.gca()
     df.plot(kind='line', x='Topics', y="Coherence_cv", ax=ax)
     df.plot(kind='line', x='Topics', y="Coherence_umass", ax=ax.twinx(), color='red')
+    plt.xlabel("Topic Number")
+    plt.ylabel('Coherence Score')
     plt.savefig('AnalyzeData/models.png')
 
 
+def combined_t_test():
+    umass = analyze_before_after('UMASS')
+    cv = analyze_before_after('CV')
+    total = pd.concat([umass, cv])
+    total.insert(1, 'Topics', [45, 31])
+    total.set_index('Type')
+    total.to_csv(f'AnalyzeData/combined_t_test.csv')
+
+
+def analyze_per_year(model):
+    analyzer = Analyzer(model)
+    df = analyzer.calc_average_for_every_year()
+    df.plot(y=['average'])
+    plt.ylabel("Average Distance Between Documents")
+    plt.xlabel('Published Years')
+    plt.savefig(f"AnalyzeData/{model.upper()}_yearly_average.png")
+
+    df = df.transpose()
+    df['null_count'] = df.isnull().sum(axis=1)
+
+    print(f"More than 35 published years: {df.loc[(df['null_count']<(55-35))].shape[0]}")
+    print(f"More than 40 published years: {df.loc[(df['null_count']<(55-40))].shape[0]}")
+
+
+def graph_article_counts():
+    analyzer = Analyzer('UMASS')
+    data = analyzer.main()
+    data['total'] = data['size_before'] + data['size_after']
+    bin_size = int(np.sqrt(data.shape[0]))
+
+    ax1 = plt.subplot(1, 3, 1)
+    ax2 = plt.subplot(1, 3, 2, sharey=ax1, sharex=ax1)
+    ax3 = plt.subplot(1, 3, 3, sharey=ax1, sharex=ax1)
+
+    ax1.hist(data['size_before'], color='blue', edgecolor='black', bins=bin_size)
+    ax1.title.set_text('Before Grant')
+    ax1.set_ylabel('Researcher Count')
+    ax1.set_xlabel('Publication Count')
+
+    ax2.hist(data['size_after'], color='blue', edgecolor='black', bins=bin_size)
+    ax2.title.set_text('After Grant')
+    ax2.set_ylabel('Researcher Count')
+    ax2.set_xlabel('Publication Count')
+
+    ax3.hist(data['total'], color='blue', edgecolor='black', bins=bin_size)
+    ax3.title.set_text('Total Count')
+    ax3.set_ylabel('Researcher Count')
+    ax3.set_xlabel('Publication Count')
+
+    plt.tight_layout()
+    plt.savefig('AnalyzeData/publication_counts.png')
+
 if __name__ == "__main__":
-    compare_models()
-    analyze_before_after('CV')
-    analyze_before_after('UMASS')
+    graph_article_counts()
+    #compare_models()
+    #analyze_per_year('umass')
+    #analyze_before_after('cv')
+
+    #analyze_before_after("umass")
