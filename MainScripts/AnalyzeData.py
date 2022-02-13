@@ -1,5 +1,3 @@
-import numpy as np
-
 from HelperObjects.Analyzer import Analyzer, pathManager
 
 import pingouin as pt
@@ -7,6 +5,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
+
 
 def analyze_before_after(model):
     alpha = 0.05
@@ -52,12 +51,11 @@ def analyze_before_after(model):
     res_separate = pd.concat([res_smaller, res_bigger])
     res_separate.to_csv(f'AnalyzeData/{model}t_test_separate.csv')
 
-    ax1.cla();
+    ax1.cla()
     ax2.cla()
     bin_size = int(len(filtered_bigger) ** (1 / 2))
     ax1.hist(filtered_bigger['avg_dist_before'], color='blue', edgecolor='black', bins=bin_size)
     ax1.title.set_text('Average Distance Before')
-
 
     ax2.hist(filtered_bigger['avg_dist_after'], color='blue', edgecolor='black', bins=bin_size)
     ax2.title.set_text('Average Distance After')
@@ -117,42 +115,76 @@ def analyze_per_year(model):
     df = df.transpose()
     df['null_count'] = df.isnull().sum(axis=1)
 
-    print(f"More than 35 published years: {df.loc[(df['null_count']<(55-35))].shape[0]}")
-    print(f"More than 40 published years: {df.loc[(df['null_count']<(55-40))].shape[0]}")
+    print(f"More than 35 published years: {df.loc[(df['null_count'] < (55 - 35))].shape[0]}")
+    print(f"More than 40 published years: {df.loc[(df['null_count'] < (55 - 40))].shape[0]}")
 
 
 def graph_article_counts():
     analyzer = Analyzer('UMASS')
     data = analyzer.main()
     data['total'] = data['size_before'] + data['size_after']
-    bin_size = int(np.sqrt(data.shape[0]))
+    bin_count = int(np.sqrt(data.shape[0]))
 
-    ax1 = plt.subplot(1, 3, 1)
-    ax2 = plt.subplot(1, 3, 2, sharey=ax1, sharex=ax1)
-    ax3 = plt.subplot(1, 3, 3, sharey=ax1, sharex=ax1)
+    ax1 = plt.subplot(2, 3, 1)
+    ax2 = plt.subplot(2, 3, 2, sharey=ax1, sharex=ax1)
+    ax3 = plt.subplot(2, 3, 3, sharey=ax1, sharex=ax1)
 
-    ax1.hist(data['size_before'], color='blue', edgecolor='black', bins=bin_size)
+    ax4 = plt.subplot(2, 3, 4)
+    ax5 = plt.subplot(2, 3, 5, sharey=ax4, sharex=ax4)
+    ax6 = plt.subplot(2, 3, 6, sharey=ax4, sharex=ax4)
+
+    cut_off = 1000
+
+    ax1.set_xlim(0, cut_off)
+    ax2.set_xlim(0, cut_off)
+    ax3.set_xlim(0, cut_off)
+
+    ax1.hist(data['size_before'], color='blue', edgecolor='black', bins=bin_count)
     ax1.title.set_text('Before Grant')
     ax1.set_ylabel('Researcher Count')
     ax1.set_xlabel('Publication Count')
 
-    ax2.hist(data['size_after'], color='blue', edgecolor='black', bins=bin_size)
+    ax2.hist(data['size_after'], color='blue', edgecolor='black', bins=bin_count)
     ax2.title.set_text('After Grant')
     ax2.set_ylabel('Researcher Count')
     ax2.set_xlabel('Publication Count')
 
-    ax3.hist(data['total'], color='blue', edgecolor='black', bins=bin_size)
+    ax3.hist(data['total'], color='blue', edgecolor='black', bins=bin_count)
     ax3.title.set_text('Total Count')
     ax3.set_ylabel('Researcher Count')
     ax3.set_xlabel('Publication Count')
 
-    plt.tight_layout()
+    cut_off = 300
+
+    ax4.set_xlim(0, cut_off)
+    ax5.set_xlim(0, cut_off)
+    ax6.set_xlim(0, cut_off)
+
+    bin_count = int(np.sqrt(data.loc[data["total"] < cut_off].shape[0]) * 3)
+
+    ax4.hist(data['size_before'], color='blue', edgecolor='black', bins=bin_count)
+    ax4.title.set_text('Before Grant\nZoomed')
+    ax4.set_ylabel('Researcher Count')
+    ax4.set_xlabel('Publication Count')
+
+    ax5.hist(data['size_after'], color='blue', edgecolor='black', bins=bin_count)
+    ax5.title.set_text('After Grant\nZoomed')
+    ax5.set_ylabel('Researcher Count')
+    ax5.set_xlabel('Publication Count')
+
+    ax6.hist(data['total'], color='blue', edgecolor='black', bins=bin_count)
+    ax6.title.set_text('Total Count\nZoomed')
+    ax6.set_ylabel('Researcher Count')
+    ax6.set_xlabel('Publication Count')
+
+    plt.tight_layout(pad=0.4, w_pad=1, h_pad=2)
     plt.savefig('AnalyzeData/publication_counts.png')
+
 
 if __name__ == "__main__":
     graph_article_counts()
-    #compare_models()
-    #analyze_per_year('umass')
-    #analyze_before_after('cv')
+    # compare_models()
+    # analyze_per_year('umass')
+    # analyze_before_after('cv')
 
-    #analyze_before_after("umass")
+    # analyze_before_after("umass")
