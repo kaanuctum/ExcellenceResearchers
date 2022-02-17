@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 import gensim
 
-
 class Analyzer:
     def __init__(self, model):
         self.name = model.upper()
@@ -20,13 +19,14 @@ class Analyzer:
     def get_article_topics_before_after(self, auth_id, cluster_id):
         self.sql.cur.execute('SELECT DISTINCT(grant_year) from excellence_clusters WHERE cluster_id=?', (cluster_id,))
         year = self.sql.cur.fetchall()[0][0]
+        # TODO: the topic position is depricated, change this
         self.sql.cur.execute('''SELECT DISTINCT a.eid, a.topic_position FROM articles a INNER JOIN lookup_article_researcher l 
                                     ON a.eid = l.article_id
                                     AND l.researcher_id=?
                                     AND a.year < ?
                                     AND a.abstract_flag=1''', (auth_id, year))
         temp = self.sql.cur.fetchall()
-        before = [([i[1] for i in self.dict[eid]['topics']]) for eid, _ in temp]
+        before = [([i for i in self.dict[eid]['topics']]) for eid, _ in temp]
 
         self.sql.cur.execute('''SELECT DISTINCT a.eid, a.topic_position FROM articles a INNER JOIN lookup_article_researcher l 
                                     ON a.eid = l.article_id
@@ -34,7 +34,7 @@ class Analyzer:
                                     AND a.year >= ?
                                     AND a.abstract_flag=1''', (auth_id, year))
         temp = self.sql.cur.fetchall()
-        after = [([i[1] for i in self.dict[eid]['topics']]) for eid, _ in temp]
+        after = [([i for i in self.dict[eid]['topics']]) for eid, _ in temp]
         return before, after
 
     # returns the distance between two points
@@ -62,7 +62,7 @@ class Analyzer:
         # divides the authors works into 2 based on the first grant they ever received, disregards the others
         if first:
             self.sql.cur.execute(
-                'SELECT scopus_id, MIN(cluster_id) FROM researchers GROUP BY scopus_id HAVING scopus_id NOT NULL')
+                'SELECT DISTINCT scopus_id, MIN(cluster_id) FROM researchers GROUP BY scopus_id HAVING scopus_id NOT NULL')
             return self.sql.cur.fetchall()
 
         # divides the authors works into multiple groups of before and after, for every grant they ever recieved
@@ -74,7 +74,7 @@ class Analyzer:
     # add the topic distribution of all the documents
     def calc_position_of_documents(self):
         print('Calculating results')
-        self.df['topics'] = self.df['bow'].map(lambda x: self.model.get_document_topics(x, minimum_probability=0))
+        self.df['topics'] = self.df['bow'].map(lambda x: [i[1] for i in self.model.get_document_topics(x, minimum_probability=0)])
         self.dict = self.df.set_index('id').to_dict('index')
 
     def calc_before_after_grant_average_dist(self):
@@ -94,7 +94,6 @@ class Analyzer:
             before, after = self.get_article_topics_before_after(auth_id, cluster_id)
 
             # basic checks for all the 'wrong' inputs we can have
-
             if len(before) == 0:  # no input before
                 avg_dist_before = -1.0
             elif len(before) == 1:  # only 1 input so the 'distance' between topics does not make sense
@@ -107,6 +106,7 @@ class Analyzer:
             elif len(after) == 1:  # only 1 input so the 'distance' between topics does not make sense
                 avg_dist_after = -2.0
             else:
+                # we can calculate the average distance
                 avg_dist_after = np.array(self.map_to_average_distance(after)).mean()
 
             # save results
@@ -140,7 +140,7 @@ class Analyzer:
                 self.sql.cur.execute('''SELECT DISTINCT a.year FROM articles a INNER JOIN lookup_article_researcher l 
                                                         ON a.eid = l.article_id
                                                         AND l.researcher_id=?
-                                                        AND a.abstract_flag=1''', (auth_id, ))
+                                                        AND a.abstract_flag=1''', (auth_id,))
                 years = self.sql.cur.fetchall()
                 for year_count, year in enumerate(years):
                     self.sql.cur.execute('''SELECT DISTINCT a.eid FROM articles a INNER JOIN lookup_article_researcher l 
@@ -158,6 +158,67 @@ class Analyzer:
             df.sort_index(axis=0, inplace=True)
             df.to_pickle(path)
             return df
+
+
+    def normalized_distance_to_years(self):
+        self.calc_position_of_documents()
+        df = self.df.set_index("id")
+        self.sql.cur.execute("""SELECT DISTINCT temp.scopus_id, e.grant_year FROM 
+                                (SELECT DISTINCT scopus_id, MIN(cluster_id) cluster_id FROM researchers GROUP BY scopus_id HAVING scopus_id NOT NULL) temp 
+                                INNER JOIN excellence_clusters e ON e.cluster_id=temp.cluster_id """)
+
+        grant_years = self.sql.cur.fetchall()
+        df1 = pd.DataFrame(grant_years)
+        df1.columns = ["author_id", "grant_year"]
+        df1 = df1.set_index("author_id")
+
+
+        self.sql.cur.execute('''SELECT DISTINCT a.eid, l.researcher_id, a.year FROM articles a INNER JOIN lookup_article_researcher l 
+                                    ON a.eid = l.article_id
+                                    AND a.abstract_flag=1''')
+        article_years = self.sql.cur.fetchall()
+        df2 = pd.DataFrame(article_years)
+        df2.columns = ["article_id", "author_id", 'publication_year']
+        df2 = df2.set_index("author_id")
+
+        df3 = df1.join(df2, how='right')
+        df = df.join(df3.reset_index().set_index('article_id'))
+        del (df1, df2, df3)
+        df['dt'] = df['publication_year'] - df['grant_year']
+        df = df.drop(['raw_data', 'bow', 'lemmatized'], axis=1)
+
+        # TODO: for most of the researchers there is not enough articles published each
+        #  year to get a meaningful 'average distance'
+        #  out of the year-author combinations 35843 of them have more than 1 publications
+        #  and 7318 of them have 1 or less
+        #  the results are for the other ones
+
+        collector = {
+            "auth_id": [],
+            "year_dt": [],
+            "avg_dist":[],
+            'count': []
+        }
+
+        for group in tqdm(list(df.groupby('author_id'))):
+            auth_id = group[0]
+            author_parts = list(group[1].groupby('dt'))
+            for part in author_parts:
+                dt = part[0]
+                small_part = part[1]
+                if small_part.shape[0] <= 1:
+                    continue
+                else:
+                    avg_dist = np.array(self.map_to_average_distance(small_part["topics"])).mean()
+                    collector["auth_id"].append(auth_id)
+                    collector["year_dt"].append(dt)
+                    collector["avg_dist"].append(avg_dist)
+                    collector['count'].append(small_part.shape[0])
+        output = pd.DataFrame(collector)
+        a = pd.DataFrame([(i[0], np.array(i[1]['avg_dist']).mean(), np.array(i[1]['count']).sum()) for i in list(output.groupby('year_dt'))])
+        a.columns = ['dt', 'avg', 'count']
+        return a
+
 
     def main(self):
         path = f"DATA/ANALYSIS/{self.name}_results.pickle"
