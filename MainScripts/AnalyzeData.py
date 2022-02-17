@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
+from scipy.stats import linregress
 
 
 def analyze_before_after(model):
@@ -181,10 +182,31 @@ def graph_article_counts():
     plt.savefig('AnalyzeData/publication_counts.png')
 
 
+def yearly_averages_for_authors(model):
+    analyzer = Analyzer(model)
+    output = analyzer.normalized_distance_to_years()
+    filtered = output.loc[output['count'] > 200]
+    ax = filtered.plot(x='dt', y='avg')
+    bot, top = 0.4, 0.45
+    ax.set_ylim(bot, top)
+    ax.vlines(x=0, ymin=bot, ymax=top, color="black")
+    reg_total = linregress(filtered['dt'].values, filtered['avg'].values)
+    reg_before = linregress(filtered.loc[filtered['dt'] < 0]['dt'].values, filtered.loc[filtered['dt'] < 0]['avg'].values)
+    reg_after = linregress(filtered.loc[filtered['dt'] >= 0]['dt'].values, filtered.loc[filtered['dt'] >= 0]['avg'].values)
+
+    ax.axline(xy1=(0, reg_total.intercept), slope=reg_total.slope, linestyle="--", color="black")
+    ax.axline(xy1=(0, reg_before.intercept), slope=reg_before.slope, linestyle="--", color="red")
+    ax.axline(xy1=(0, reg_after.intercept), slope=reg_after.slope, linestyle="--", color="blue")
+
+    ax.set_xlabel('Years after receiving the grant')
+    ax.set_ylabel('Average Distance')
+    plt.savefig('AnalyzeData/normalized_averages.png')
+
+
 if __name__ == "__main__":
-    graph_article_counts()
+    # graph_article_counts()
     # compare_models()
     # analyze_per_year('umass')
     # analyze_before_after('cv')
-
     # analyze_before_after("umass")
+    yearly_averages_for_authors('UMASS')
