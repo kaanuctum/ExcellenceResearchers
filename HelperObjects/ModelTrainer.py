@@ -1,6 +1,7 @@
 import pyLDAvis
 import pyLDAvis.gensim_models
 import warnings
+
 warnings.filterwarnings('ignore')
 from MainScripts.ParseData import parse_words
 from HelperObjects import *
@@ -13,10 +14,10 @@ import concurrent.futures
 
 
 class ModelTrainer:
-    def __init__(self, force_re_parse=False, worker_count=1):
+    def __init__(self, force_re_parse=False, worker_count=1, min_topics=4, max_topics=50):
 
-        self.min_topics = 4
-        self.max_topics = 50
+        self.min_topics = min_topics
+        self.max_topics = max_topics
         self.worker_count = worker_count
         self.model_name = 'best_model'
         self.paths = pathManager.get_paths()
@@ -97,7 +98,7 @@ class ModelTrainer:
 
         for topic_number in topics_range:
             k_max = min(topic_number + self.worker_count, self.max_topics + 1)
-            progress_bar.display(str(topic_number) + ' - ' + str(k_max-1))
+            progress_bar.display(str(topic_number) + ' - ' + str(k_max - 1))
 
             train_range = [i for i in range(topic_number, k_max)]
             prev_done = True
@@ -106,7 +107,9 @@ class ModelTrainer:
                     prev_done = False
                 else:
                     print(f"{i} topics previously done")
-            if prev_done: continue
+            if prev_done:
+                progress_bar.update(len(train_range))
+                continue
 
             results = self.create_models_in_parallel(training_range=train_range)
             for lda_model in results:
