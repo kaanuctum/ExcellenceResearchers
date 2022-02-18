@@ -181,6 +181,18 @@ def graph_article_counts():
     plt.savefig('AnalyzeData/publication_counts.png')
 
 
+
+def normalized_comp_temp():
+    df = pd.DataFrame
+    ax = plt.gca()
+    ax2 = ax.twinx()
+    df.plot(kind='bar', x='dt', y="count", ax=ax)
+    df.plot(kind='line', x='dt', y="avg", ax=ax2, color='red')
+    ax.set_xlabel("Years after getting the grant (-1: before)")
+    ax.set_ylabel('researcher count')
+    ax2.set_ylabel('average distance in year')
+    plt.savefig('AnalyzeData/models.png')
+
 if __name__ == "__main__":
     graph_article_counts()
     # compare_models()
