@@ -161,63 +161,70 @@ class Analyzer:
 
 
     def normalized_distance_to_years(self):
-        self.calc_position_of_documents()
-        df = self.df.set_index("id")
-        self.sql.cur.execute("""SELECT DISTINCT temp.scopus_id, e.grant_year FROM 
-                                (SELECT DISTINCT scopus_id, MIN(cluster_id) cluster_id FROM researchers GROUP BY scopus_id HAVING scopus_id NOT NULL) temp 
-                                INNER JOIN excellence_clusters e ON e.cluster_id=temp.cluster_id """)
+        try:
+            return pd.read_pickle(f'DATA/ANALYSIS/{self.name}_normalized.pickle')
+        except:
+            self.calc_position_of_documents()
+            df = self.df.set_index("id")
+            self.sql.cur.execute("""SELECT DISTINCT temp.scopus_id, e.grant_year FROM 
+                                    (SELECT DISTINCT scopus_id, MIN(cluster_id) cluster_id FROM researchers GROUP BY scopus_id HAVING scopus_id NOT NULL) temp 
+                                    INNER JOIN excellence_clusters e ON e.cluster_id=temp.cluster_id """)
 
-        grant_years = self.sql.cur.fetchall()
-        df1 = pd.DataFrame(grant_years)
-        df1.columns = ["author_id", "grant_year"]
-        df1 = df1.set_index("author_id")
+            grant_years = self.sql.cur.fetchall()
+            df1 = pd.DataFrame(grant_years)
+            df1.columns = ["author_id", "grant_year"]
+            df1 = df1.set_index("author_id")
 
 
-        self.sql.cur.execute('''SELECT DISTINCT a.eid, l.researcher_id, a.year FROM articles a INNER JOIN lookup_article_researcher l 
-                                    ON a.eid = l.article_id
-                                    AND a.abstract_flag=1''')
-        article_years = self.sql.cur.fetchall()
-        df2 = pd.DataFrame(article_years)
-        df2.columns = ["article_id", "author_id", 'publication_year']
-        df2 = df2.set_index("author_id")
+            self.sql.cur.execute('''SELECT DISTINCT a.eid, l.researcher_id, a.year FROM articles a INNER JOIN lookup_article_researcher l 
+                                        ON a.eid = l.article_id
+                                        AND a.abstract_flag=1''')
+            article_years = self.sql.cur.fetchall()
+            df2 = pd.DataFrame(article_years)
+            df2.columns = ["article_id", "author_id", 'publication_year']
+            df2 = df2.set_index("author_id")
 
-        df3 = df1.join(df2, how='right')
-        df = df.join(df3.reset_index().set_index('article_id'))
-        del (df1, df2, df3)
-        df['dt'] = df['publication_year'] - df['grant_year']
-        df = df.drop(['raw_data', 'bow', 'lemmatized'], axis=1)
+            df3 = df1.join(df2, how='inner').reset_index().set_index('article_id')
+            df = df.join(df3)
+            df['dt'] = df['publication_year'] - df['grant_year']
+            df = df.drop(['raw_data', 'bow', 'lemmatized'], axis=1)
+            del (df1, df2, df3)
 
-        # TODO: for most of the researchers there is not enough articles published each
-        #  year to get a meaningful 'average distance'
-        #  out of the year-author combinations 35843 of them have more than 1 publications
-        #  and 7318 of them have 1 or less
-        #  the results are for the other ones
+            # TODO: for most of the researchers there is not enough articles published each
+            #  year to get a meaningful 'average distance'
+            #  out of the year-author combinations 35843 of them have more than 1 publications
+            #  and 7318 of them have 1 or less
+            #  the results are for the other ones
 
-        collector = {
-            "auth_id": [],
-            "year_dt": [],
-            "avg_dist":[],
-            'count': []
-        }
-
-        for group in tqdm(list(df.groupby('author_id'))):
-            auth_id = group[0]
-            author_parts = list(group[1].groupby('dt'))
-            for part in author_parts:
-                dt = part[0]
-                small_part = part[1]
-                if small_part.shape[0] <= 1:
-                    continue
+            collector = {
+                "dt": [],
+                "avg_dist":[],
+                'count': []
+            }
+            df_parts = list(df.groupby('dt'))
+            for group in tqdm(df_parts):
+                dt = int(group[0])
+                author_parts = list(group[1].groupby('author_id'))
+                avg_dist = -1
+                avg = []
+                for part in author_parts:
+                    small_part = part[1]
+                    if small_part.shape[0] <= 1:
+                        continue
+                    else:
+                        avg_dist_researcher = np.array(self.map_to_average_distance(small_part["topics"])).mean()
+                        avg.append(avg_dist_researcher)
+                if len(avg) > 0:
+                    avg_dist = np.array(avg).mean()
                 else:
-                    avg_dist = np.array(self.map_to_average_distance(small_part["topics"])).mean()
-                    collector["auth_id"].append(auth_id)
-                    collector["year_dt"].append(dt)
-                    collector["avg_dist"].append(avg_dist)
-                    collector['count'].append(small_part.shape[0])
-        output = pd.DataFrame(collector)
-        a = pd.DataFrame([(i[0], np.array(i[1]['avg_dist']).mean(), np.array(i[1]['count']).sum()) for i in list(output.groupby('year_dt'))])
-        a.columns = ['dt', 'avg', 'count']
-        return a
+                    print(dt)
+                collector['count'].append(len(author_parts))
+                collector['dt'].append(dt)
+                collector["avg_dist"].append(avg_dist)
+
+                output = pd.DataFrame(collector)
+                output.to_pickle(f'DATA/ANALYSIS/{self.name}_normalized.pickle')
+                return output
 
 
     def main(self):
