@@ -243,5 +243,5 @@ if __name__ == "__main__":
     # compare_models()
     # analyze_per_year('umass')
     # analyze_before_after('cv')
-    # analyze_before_after("umass")
-    yearly_averages_for_authors('UMASS')
+    analyze_before_after("umass")
+
