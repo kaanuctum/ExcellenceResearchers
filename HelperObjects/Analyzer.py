@@ -190,12 +190,6 @@ class Analyzer:
             df = df.drop(['raw_data', 'bow', 'lemmatized'], axis=1)
             del (df1, df2, df3)
 
-            # TODO: for most of the researchers there is not enough articles published each
-            #  year to get a meaningful 'average distance'
-            #  out of the year-author combinations 35843 of them have more than 1 publications
-            #  and 7318 of them have 1 or less
-            #  the results are for the other ones
-
             collector = {
                 "dt": [],
                 "avg_dist":[],

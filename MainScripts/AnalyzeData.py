@@ -191,8 +191,8 @@ def yearly_averages_for_authors(model):
     filtered.plot(kind='line', x='dt', y="count", ax=ax2)  # number of researchers with >1 researchers
     filtered.plot(kind='line', x='dt', y="avg_dist", ax=ax1, color='red')
     ax1.set_xlabel("Years after getting the grant (-1: before)")
-    ax1.set_ylabel('researcher count')
-    ax2.set_ylabel('average distance in year')
+    ax1.set_ylabel('average distance in year')
+    ax2.set_ylabel('researcher count')
     ax2.set_ylim(0, 1750)
     ax1.set_ylim(0.25, 0.5)
     ax1.vlines(x=0, ymin=-1, ymax=1, linestyles='dashed', color="black")
@@ -205,37 +205,19 @@ def yearly_averages_for_authors(model):
     filtered.plot(kind='line', x='dt', y="count", ax=ax4)  # number of researchers with >1 researchers
     filtered.plot(kind='line', x='dt', y="avg_dist", ax=ax3, color='red')
     ax3.set_xlabel("Years after getting the grant (-1: before)")
-    ax3.set_ylabel('researcher count')
-    ax4.set_ylabel('average distance in year')
+    ax3.set_ylabel('average distance in year')
+    ax4.set_ylabel('researcher count')
     ax4.set_ylim(0, 1750)
     ax3.set_ylim(0.35, 0.45)
     ax3.legend(loc='upper left')
     ax4.legend(loc='upper right')
     ax3.vlines(x=0, ymin=-1, ymax=1, linestyles='dashed', color="black")
 
-    '''
-    reg_total = linregress(filtered['dt'].values, filtered['avg_dist'].values)
-    reg_before = linregress(filtered.loc[filtered['dt'] < 0]['dt'].values, filtered.loc[filtered['dt'] < 0]['avg_dist'].values)
-    reg_after = linregress(filtered.loc[filtered['dt'] >= 0]['dt'].values, filtered.loc[filtered['dt'] >= 0]['avg_dist'].values)
-    ax.axline(xy1=(0, reg_total.intercept), slope=reg_total.slope, linestyle="--", color="black")
-    ax.axline(xy1=(0, reg_before.intercept), slope=reg_before.slope, linestyle="--", color="red")
-    ax.axline(xy1=(0, reg_after.intercept), slope=reg_after.slope, linestyle="--", color="blue")
-    '''
+
     plt.tight_layout()
 
     plt.savefig('AnalyzeData/normalized_averages.png')
 
-
-def normalized_comp_temp():
-    df = pd.DataFrame
-    ax = plt.gca()
-    ax2 = ax.twinx()
-    df.plot(kind='bar', x='dt', y="count", ax=ax)
-    df.plot(kind='line', x='dt', y="avg", ax=ax2, color='red')
-    ax.set_xlabel("Years after getting the grant (-1: before)")
-    ax.set_ylabel('researcher count')
-    ax2.set_ylabel('average distance in year')
-    plt.savefig('AnalyzeData/models.png')
 
 
 if __name__ == "__main__":
@@ -243,5 +225,5 @@ if __name__ == "__main__":
     # compare_models()
     # analyze_per_year('umass')
     # analyze_before_after('cv')
-    analyze_before_after("umass")
-
+    # analyze_before_after("umass")
+    yearly_averages_for_authors('umass')
